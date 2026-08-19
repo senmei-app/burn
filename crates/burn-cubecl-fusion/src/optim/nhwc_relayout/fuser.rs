@@ -63,7 +63,7 @@ impl<R: Runtime> NHWCRelayoutFuser<R> {
             output_shape_updates: true,
             inplace: true,
             vectorization: VectorizationSetting::Activated,
-            ref_layout: RefLayoutSetting::Any,
+            ref_layout: RefLayoutSetting::OnlyContiguous,
         }
     }
 

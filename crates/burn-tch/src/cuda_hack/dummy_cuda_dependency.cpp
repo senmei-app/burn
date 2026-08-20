@@ -11,14 +11,14 @@ struct cublasContext;
 
 namespace at {
 namespace cuda {
-cublasContext *getCurrentCUDABlasHandle();
+cublasContext *getCurrentCUDABlasHandle(bool);
 int warp_size();
 } // namespace cuda
 } // namespace at
 char *magma_strerror(int err);
 void dummy_cuda_dependency() {
   try {
-    at::cuda::getCurrentCUDABlasHandle();
+    at::cuda::getCurrentCUDABlasHandle(false);
     at::cuda::warp_size();
   } catch (std::exception &e) {
     if (getenv("TCH_PRINT_CUDA_INIT_ERROR") != nullptr) {

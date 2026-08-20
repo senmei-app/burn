@@ -80,8 +80,6 @@ features = ["download-libtorch"]
 [dependencies.torch-sys]
 version = "0.22.0"
 
-[build-dependencies.cc]
-version = "1.2.61"
 
 [lints.clippy]
 

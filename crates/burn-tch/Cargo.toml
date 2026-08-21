@@ -30,9 +30,6 @@ log = { workspace = true }
 tch = { workspace = true, features = ["download-libtorch"] }
 torch-sys = { workspace = true }                             # for build script lib dir detection
 
-[build-dependencies]
-cc = "1.5.1"
-
 [package.metadata.docs.rs]
 features = ["doc"]
 rustdoc-args = ["--cfg", "docsrs"]

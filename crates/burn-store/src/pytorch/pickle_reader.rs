@@ -383,12 +383,20 @@ fn rebuild_tensor(
         _ => 0,
     };
     let shape = parse_shape_arg(&args[2], "rebuild_tensor")?;
+    // Legacy _rebuild_tensor: (storage, storage_offset, size, stride); a
+    // missing stride means contiguous.
+    let strides = if args.len() >= 4 {
+        parse_shape_arg(&args[3], "rebuild_tensor")?
+    } else {
+        shape.clone()
+    };
 
     rebuild_tensor_impl(
         storage_info,
         storage_tuple,
         storage_offset,
         shape,
+        strides,
         data_source,
     )
 }
@@ -422,7 +430,9 @@ fn rebuild_tensor_v2(
         _ => 0,
     };
     let shape = parse_shape_arg(&args[2], "rebuild_tensor_v2")?;
-    // args[3] is stride (unused)
+    // args[3] is the stride tuple — capture it so non-contiguous tensors load
+    // in logical row-major order instead of linearly from the storage.
+    let strides = parse_shape_arg(&args[3], "rebuild_tensor_v2")?;
     // args[4] is requires_grad (unused)
     // args[5] is backward_hooks (unused)
 
@@ -431,6 +441,7 @@ fn rebuild_tensor_v2(
         storage_tuple,
         storage_offset,
         shape,
+        strides,
         data_source,
     )
 }
@@ -462,6 +473,7 @@ fn rebuild_tensor_impl(
     storage_tuple: Option<Vec<Object>>,
     storage_offset: usize,
     shape: Vec<usize>,
+    strides: Vec<usize>,
     data_source: &Option<Arc<LazyDataSource>>,
 ) -> Result<Object> {
     // Parse the storage info to extract dtype and storage key
@@ -560,6 +572,12 @@ fn rebuild_tensor_impl(
     // Create clones for the closure
     let data_source_clone = data_source.clone();
     let shape_clone = shape.clone();
+    // A malformed/empty stride tuple falls back to contiguous (i maps to i).
+    let strides_clone = if strides.len() == shape.len() {
+        strides
+    } else {
+        shape.clone()
+    };
 
     // Find the correct data file key
     let data_file_key = {
@@ -616,6 +634,30 @@ fn rebuild_tensor_impl(
                 }
 
                 let data_slice = &data[offset_bytes..];
+
+                // Non-contiguous tensors (channels-last checkpoints) store
+                // elements at stride-computed offsets; gather them into logical
+                // row-major order so the dtype loops read contiguous data.
+                // Contiguous strides map i → i, so this is a no-op there.
+                let mut logical = vec![0u8; num_elements * element_size];
+                if data_slice.len() >= num_elements * element_size {
+                    for i in 0..num_elements {
+                        let mut idx = i;
+                        let mut off = 0usize;
+                        for j in (0..shape_clone.len()).rev() {
+                            let d = shape_clone[j];
+                            off += (idx % d) * strides_clone[j];
+                            idx /= d;
+                        }
+                        let src = off * element_size;
+                        let dst = i * element_size;
+                        if src + element_size <= data_slice.len() {
+                            logical[dst..dst + element_size]
+                                .copy_from_slice(&data_slice[src..src + element_size]);
+                        }
+                    }
+                }
+                let data_slice = &logical[..];
                 let available_elements = data_slice.len() / element_size;
                 let elements_to_read = num_elements.min(available_elements);
 
